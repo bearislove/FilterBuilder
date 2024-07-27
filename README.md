@@ -6,11 +6,22 @@
 
 ```composer require anhtt/laravel-filter-builder:dev-main```
 
-### Filter a query based on a request: `/users?name=John`:
+
+```
+//app/Models/User.php
+use AnhTT\FilterBuilder\Filterable;
+
+class User extends Authenticatable
+{
+   use  Filterable;
+```
+
+### FilterConfig a query based on a request: `/users?name=John`:
 
 ```php
 use AnhTT\FilterBuilder\FilterConfig;
 
+    $filterConfig = new FilterConfig();
     $filterConfig->setFilters([
             'id' => 'users.id:cn',
             'name' => [
@@ -36,14 +47,16 @@ use AnhTT\FilterBuilder\FilterConfig;
             'color_name' => ['products']
         ])->setDefaultSort('id:desc');
 
-// all `User`s that contain the string "John" in their name
 ```
 ```
-use AnhTT\FilterBuilder\FilterConfig;
-
-   $filterConfig = new UserFilterForm();
-   return User::filterBuilder($requestData, $filterConfig, request('sort'))->paginate();
+'eq' => $query->where($column, $value)
+'ne' => $query->whereNot($column, $value)
+'in' => $query->whereIn($column, $value)
+'ni' => $query->whereNotIn($column, $value)
+'cn' => $query->where($column, 'like', "%$value%")
+'sw' => $query->where($column, 'like', "$value%")
 ```
+### Filter Form:
 
 ```
 <?php
@@ -103,6 +116,12 @@ class UserFilterForm extends FilterForm
         return 'id:desc';
     }
 }
+```
+```
+use AnhTT\FilterBuilder\FilterConfig;
+
+   $filterConfig = new UserFilterForm();
+   $users = User::filterBuilder($requestData, $filterConfig, request('sort'))->paginate();
 ```
 ## License
 
