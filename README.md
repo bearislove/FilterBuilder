@@ -44,7 +44,7 @@ use AnhTT\FilterBuilder\FilterConfig;
                 $join->on('colors.id', '=', 'products.color_id');
             }],
         ])->setJoinPriority([
-            'color_name' => ['products']
+            'colors' => ['products']
         ])->setDefaultSort('id:desc');
 
 ```
