@@ -2,12 +2,35 @@
 
 namespace AnhTT\FilterBuilder;
 
+use AnhTT\FilterBuilder\Support\Cfg;
+use InvalidArgumentException;
+
 class FilterWhere
 {
+    /**
+     * Built-in formulas cached as a static property — allocated once per
+     * PHP process instead of once per request.
+     *
+     * @var array<string, \Closure>|null
+     */
+    private static ?array $builtinCache = null;
+
     public function getQueries(FilterConfig $filterConfig, array $requestData): array
     {
         $configs = $filterConfig->getFilters();
-        $formulas = array_merge($this->builtinFormulas(), $this->globalFormulas(), $filterConfig->getCustomFormulas());
+
+        // Build the merged formula map.
+        // In the common case (no global or per-config additions) we skip
+        // array_merge entirely and reuse the static cache directly.
+        $globalFormulas = Cfg::get('formulas', []);
+        $customFormulas = $filterConfig->getCustomFormulas();
+        $builtins       = $this->builtinFormulas();
+
+        $formulas = ($globalFormulas || $customFormulas)
+            ? array_merge($builtins, $globalFormulas, $customFormulas)
+            : $builtins;
+
+        $strict        = Cfg::get('strict_mode', false);
         $filterQueries = [];
 
         foreach ($requestData as $requestItem) {
@@ -18,7 +41,7 @@ class FilterWhere
                 continue;
             }
 
-            $filterQuery = $this->getFilterQuery($configs[$name], $value, $formulas, $filterConfig);
+            $filterQuery = $this->buildQuery($configs[$name], $value, $formulas, $filterConfig, $strict);
             if ($filterQuery !== null) {
                 $filterQueries[] = $filterQuery;
             }
@@ -27,112 +50,100 @@ class FilterWhere
         return $filterQueries;
     }
 
+    // -------------------------------------------------------------------------
+
+    /** Returns built-in formulas, building the array only on the first call. */
     private function builtinFormulas(): array
     {
-        return [
-            'eq' => function ($query, $column, $value) {
-                return $query->where($column, $value);
-            },
-            'ne' => function ($query, $column, $value) {
-                return $query->where($column, '!=', $value);
-            },
-            'gt' => function ($query, $column, $value) {
-                return $query->where($column, '>', $value);
-            },
-            'gte' => function ($query, $column, $value) {
-                return $query->where($column, '>=', $value);
-            },
-            'lt' => function ($query, $column, $value) {
-                return $query->where($column, '<', $value);
-            },
-            'lte' => function ($query, $column, $value) {
-                return $query->where($column, '<=', $value);
-            },
-            'in' => function ($query, $column, $value) {
-                return $query->whereIn($column, (array) $value);
-            },
-            'ni' => function ($query, $column, $value) {
-                return $query->whereNotIn($column, (array) $value);
-            },
-            'null' => function ($query, $column) {
-                return $query->whereNull($column);
-            },
-            'not_null' => function ($query, $column) {
-                return $query->whereNotNull($column);
-            },
-            'cn' => function ($query, $column, $value) {
-                return $query->where($column, 'like', "%{$value}%");
-            },
-            'sw' => function ($query, $column, $value) {
-                return $query->where($column, 'like', "{$value}%");
-            },
-            'ew' => function ($query, $column, $value) {
-                return $query->where($column, 'like', "%{$value}");
-            },
-            'bw' => function ($query, $column, $value) {
-                if (isset($value['from']) && $value['from'] !== null && $value['from'] !== '') {
-                    $query->where($column, '>=', $value['from']);
+        if (static::$builtinCache !== null) {
+            return static::$builtinCache;
+        }
+
+        return static::$builtinCache = [
+            'eq'       => fn ($q, $col, $val) => $q->where($col, $val),
+            'ne'       => fn ($q, $col, $val) => $q->where($col, '!=', $val),
+            'gt'       => fn ($q, $col, $val) => $q->where($col, '>', $val),
+            'gte'      => fn ($q, $col, $val) => $q->where($col, '>=', $val),
+            'lt'       => fn ($q, $col, $val) => $q->where($col, '<', $val),
+            'lte'      => fn ($q, $col, $val) => $q->where($col, '<=', $val),
+            'in'       => fn ($q, $col, $val) => $q->whereIn($col, (array) $val),
+            'ni'       => fn ($q, $col, $val) => $q->whereNotIn($col, (array) $val),
+            'null'     => fn ($q, $col)        => $q->whereNull($col),
+            'not_null' => fn ($q, $col)        => $q->whereNotNull($col),
+            'cn'       => fn ($q, $col, $val) => $q->where($col, 'like', "%{$val}%"),
+            'sw'       => fn ($q, $col, $val) => $q->where($col, 'like', "{$val}%"),
+            'ew'       => fn ($q, $col, $val) => $q->where($col, 'like', "%{$val}"),
+            'bw'       => static function ($q, $col, $val) {
+                if (isset($val['from']) && $val['from'] !== null && $val['from'] !== '') {
+                    $q->where($col, '>=', $val['from']);
                 }
-                if (isset($value['to']) && $value['to'] !== null && $value['to'] !== '') {
-                    $query->where($column, '<=', $value['to']);
+                if (isset($val['to']) && $val['to'] !== null && $val['to'] !== '') {
+                    $q->where($col, '<=', $val['to']);
                 }
-                return $query;
+                return $q;
             },
-            'dbw' => function ($query, $column, $value) {
-                if (isset($value['from']) && $value['from'] !== null && $value['from'] !== '') {
-                    $query->where($column, '>=', date('Y-m-d H:i:s', strtotime($value['from'])));
+            'dbw'      => static function ($q, $col, $val) {
+                if (isset($val['from']) && $val['from'] !== null && $val['from'] !== '') {
+                    $q->where($col, '>=', date('Y-m-d H:i:s', strtotime($val['from'])));
                 }
-                if (isset($value['to']) && $value['to'] !== null && $value['to'] !== '') {
-                    $query->where($column, '<=', date('Y-m-d H:i:s', strtotime($value['to'])));
+                if (isset($val['to']) && $val['to'] !== null && $val['to'] !== '') {
+                    $q->where($col, '<=', date('Y-m-d H:i:s', strtotime($val['to'])));
                 }
-                return $query;
+                return $q;
             },
         ];
     }
 
-    private function globalFormulas(): array
-    {
-        if (!function_exists('config')) {
-            return [];
-        }
-        return config('filter-builder.custom_formulas', []);
-    }
-
-    private function getFilterQuery($filter, $value, array $formulas, FilterConfig $filterConfig): ?\Closure
-    {
+    private function buildQuery(
+        mixed $filter,
+        mixed $value,
+        array $formulas,
+        FilterConfig $filterConfig,
+        bool $strict
+    ): ?\Closure {
         if (is_string($filter)) {
             [$column, $syntax] = explode(':', $filter, 2);
 
             if (!isset($formulas[$syntax])) {
+                if ($strict) {
+                    throw new InvalidArgumentException(
+                        "Unknown filter formula \"{$syntax}\". Register it in config('filter-builder.formulas') or via FilterConfig::addFormula()."
+                    );
+                }
                 return null;
             }
 
             $filterConfig->addJoin($column);
 
-            return function ($query) use ($syntax, $column, $value, $formulas) {
-                return $formulas[$syntax]($query, $column, $value);
-            };
+            return fn ($query) => $formulas[$syntax]($query, $column, $value);
         }
 
         if (is_callable($filter)) {
-            return function ($query) use ($filter, $value, $filterConfig) {
-                return $query->where(function ($query) use ($filter, $value, $filterConfig) {
-                    return $filter($query, $value, $filterConfig);
-                });
-            };
+            return fn ($query) => $query->where(
+                fn ($q) => $filter($q, $value, $filterConfig)
+            );
         }
 
         if (is_array($filter)) {
-            return function ($query) use ($filter, $value, $formulas, $filterConfig) {
-                return $query->where(function ($query) use ($filter, $value, $formulas, $filterConfig) {
+            // addJoin must be called NOW (eager), not inside the deferred closure.
+            // getJoinQueries() is called before apply(), so any join registered
+            // inside the closure would be too late and silently dropped.
+            foreach ($filter as $item) {
+                if (is_string($item)) {
+                    $filterConfig->addJoin(explode(':', $item, 2)[0]);
+                }
+            }
+
+            return fn ($query) => $query->where(
+                function ($q) use ($filter, $value, $formulas, $filterConfig, $strict) {
                     foreach ($filter as $item) {
-                        $subQuery = $this->getFilterQuery($item, $value, $formulas, $filterConfig);
-                        if ($subQuery !== null) {
-                            $query->orWhere($subQuery);
+                        $sub = $this->buildQuery($item, $value, $formulas, $filterConfig, $strict);
+                        if ($sub !== null) {
+                            $q->orWhere($sub);
                         }
                     }
-                });
-            };
+                }
+            );
         }
 
         return null;

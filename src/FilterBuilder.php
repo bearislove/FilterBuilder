@@ -2,13 +2,15 @@
 
 namespace AnhTT\FilterBuilder;
 
+use AnhTT\FilterBuilder\Support\Cfg;
+
 class FilterBuilder
 {
     private array $filterQueries;
     private array $joinQueries;
     private array $sortQueries;
     private array $selects;
-    private array $withs;
+    private array $with;
 
     public function __construct(array $requestData, FilterConfig $filterConfig, string $sort = '')
     {
@@ -16,35 +18,43 @@ class FilterBuilder
         $this->sortQueries   = $filterConfig->getSortQueries($sort);
         $this->joinQueries   = $filterConfig->getJoinQueries();
         $this->selects       = $filterConfig->getSelects();
-        $this->withs         = $filterConfig->getWiths();
+        $this->with         = $filterConfig->getWith();
     }
 
     public function apply($query)
     {
-        if (!empty($this->selects)) {
+        if ($this->selects) {
             $query->select($this->selects);
         }
 
-        if (!empty($this->withs)) {
-            $query->with($this->withs);
+        if ($this->with) {
+            $query->with($this->with);
         }
 
-        $this->applyQueries($query, $this->joinQueries);
-        $this->applyQueries($query, $this->filterQueries);
-        $this->applyQueries($query, $this->sortQueries);
+        foreach ($this->joinQueries   as $fn) { $fn($query); }
+        foreach ($this->filterQueries as $fn) { $fn($query); }
+        foreach ($this->sortQueries   as $fn) { $fn($query); }
 
         return $query;
     }
 
     private function extractFilterData(array $requestData, FilterConfig $filterConfig): array
     {
-        $arrayInputKeys = $filterConfig->getArrayInputKeys() ?: $this->configArrayInputKeys();
+        // Flip to a hash map so membership checks are O(1) instead of O(n).
+        $arrayKeys  = array_flip(
+            $filterConfig->getArrayInputKeys() ?: Cfg::get('array_input_keys', ['keywords', 'periods'])
+        );
 
         $filterData = [];
+
         foreach ($requestData as $key => $value) {
-            if (in_array($key, $arrayInputKeys, true)) {
+            if (isset($arrayKeys[$key])) {
+                // Unwrap array-of-filter-items — push each item directly to
+                // avoid creating a new array on every array_merge call.
                 if (is_array($value)) {
-                    $filterData = array_merge($filterData, $value);
+                    foreach ($value as $item) {
+                        $filterData[] = $item;
+                    }
                 }
             } else {
                 $filterData[] = ['name' => $key, 'value' => $value];
@@ -52,20 +62,5 @@ class FilterBuilder
         }
 
         return $filterData;
-    }
-
-    private function configArrayInputKeys(): array
-    {
-        if (function_exists('config')) {
-            return config('filter-builder.array_input_keys', ['keywords', 'periods']);
-        }
-        return ['keywords', 'periods'];
-    }
-
-    private function applyQueries($query, array $queries): void
-    {
-        foreach ($queries as $query_fn) {
-            $query_fn($query);
-        }
     }
 }

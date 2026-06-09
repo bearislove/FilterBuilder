@@ -2,6 +2,8 @@
 
 namespace AnhTT\FilterBuilder;
 
+use AnhTT\FilterBuilder\Support\Cfg;
+
 class FilterConfig
 {
     protected array $filters        = [];
@@ -20,7 +22,7 @@ class FilterConfig
     protected array $selects = [];
 
     /** @var array Relations passed to ->with(). */
-    protected array $withs = [];
+    protected array $with = [];
 
     private array $tablesUsed = [];
 
@@ -94,11 +96,13 @@ class FilterConfig
     public function addJoin($fields): static
     {
         if (is_string($fields)) {
-            [$table] = explode('.', $fields);
+            // strstr with before_needle=true is faster than explode()[0]
+            // for extracting the table prefix from "table.column".
+            $table = ($dot = strstr($fields, '.', true)) !== false ? $dot : $fields;
 
-            $priorities = $this->getJoinPriority();
-            if (isset($priorities[$table])) {
-                $this->addJoin($priorities[$table]);
+            // Read the property directly — skips a method call on every invocation.
+            if (isset($this->joinPriorities[$table])) {
+                $this->addJoin($this->joinPriorities[$table]);
             }
 
             if (isset($this->joins[$table]) && !isset($this->tablesUsed[$table])) {
@@ -186,9 +190,9 @@ class FilterConfig
     // Eager loads
     // -------------------------------------------------------------------------
 
-    public function getWiths(): array
+    public function getWith(): array
     {
-        return $this->withs;
+        return $this->with;
     }
 
     /**
@@ -196,9 +200,9 @@ class FilterConfig
      *
      * @param array $relations
      */
-    public function setWiths(array $relations): static
+    public function setWith(array $relations): static
     {
-        $this->withs = $relations;
+        $this->with = $relations;
         return $this;
     }
 
@@ -208,16 +212,16 @@ class FilterConfig
 
     public function getFilterQueries(array $requestData): array
     {
-        return (new FilterWhere())->getQueries($this, $requestData);
+        return Cfg::resolveHandler('where', FilterWhere::class)->getQueries($this, $requestData);
     }
 
     public function getSortQueries(?string $sort = null): array
     {
-        return (new FilterSort())->getQueries($this, $sort);
+        return Cfg::resolveHandler('sort', FilterSort::class)->getQueries($this, $sort);
     }
 
     public function getJoinQueries(): array
     {
-        return (new FilterJoin())->getQueries($this);
+        return Cfg::resolveHandler('join', FilterJoin::class)->getQueries($this);
     }
 }

@@ -17,6 +17,8 @@ Easily build Eloquent queries from API request parameters — filters, sorts, jo
 - [Eager loading (with)](#eager-loading-with)
 - [Custom formulas](#custom-formulas)
 - [Array input keys](#array-input-keys)
+- [Swapping handler classes](#swapping-handler-classes)
+- [Strict mode](#strict-mode)
 - [Publishing & customising the config file](#publishing--customising-the-config-file)
 - [Full real-world example](#full-real-world-example)
 
@@ -413,7 +415,7 @@ Load relationships alongside the query result.
 
 ```php
 $filterConfig = (new UserFilterForm())
-    ->setWiths(['profile', 'roles', 'orders' => function ($query) {
+    ->setWith(['profile', 'roles', 'orders' => function ($query) {
         $query->where('status', 'completed');
     }]);
 ```
@@ -461,14 +463,24 @@ class UserFilterForm extends FilterForm
 
 ### Global formulas via config file
 
-Add formulas to `config/filter-builder.php` and they are available in every `FilterConfig` instance:
+Add formulas to `config/filter-builder.php` and they are available in every `FilterConfig` instance. These are merged **after** built-ins, so they can also override a built-in formula.
 
 ```php
 // config/filter-builder.php
-'custom_formulas' => [
+'formulas' => [
     'year'  => fn ($query, $column, $value) => $query->whereYear($column, $value),
     'month' => fn ($query, $column, $value) => $query->whereMonth($column, $value),
+    'day'   => fn ($query, $column, $value) => $query->whereDay($column, $value),
+
+    // Override the built-in 'cn' to use case-insensitive ILIKE on PostgreSQL
+    'cn'    => fn ($query, $column, $value) => $query->whereRaw("lower({$column}) like ?", ['%' . strtolower($value) . '%']),
 ],
+```
+
+**Formula priority (highest wins):**
+
+```
+built-ins  <  config('filter-builder.formulas')  <  FilterConfig::addFormula()
 ```
 
 ---
@@ -505,13 +517,94 @@ $filterConfig->setArrayInputKeys(['keywords', 'periods', 'conditions']);
 
 ---
 
+## Swapping handler classes
+
+The three internal handlers — `FilterWhere`, `FilterSort`, `FilterJoin` — are resolved through the **Laravel service container**. You can replace any of them globally without touching the package source.
+
+### Option A — via config file
+
+```php
+// config/filter-builder.php
+'handlers' => [
+    'where' => \App\FilterBuilder\MyFilterWhere::class,
+    'sort'  => \AnhTT\FilterBuilder\FilterSort::class,   // keep default
+    'join'  => \AnhTT\FilterBuilder\FilterJoin::class,   // keep default
+],
+```
+
+### Option B — via service container (AppServiceProvider)
+
+```php
+use AnhTT\FilterBuilder\FilterWhere;
+use App\FilterBuilder\MyFilterWhere;
+
+public function register(): void
+{
+    $this->app->bind(FilterWhere::class, MyFilterWhere::class);
+}
+```
+
+Your custom handler only needs to implement the same `getQueries()` signature:
+
+```php
+// app/FilterBuilder/MyFilterWhere.php
+namespace App\FilterBuilder;
+
+use AnhTT\FilterBuilder\FilterConfig;
+use AnhTT\FilterBuilder\FilterWhere;
+
+class MyFilterWhere extends FilterWhere
+{
+    public function getQueries(FilterConfig $filterConfig, array $requestData): array
+    {
+        // pre-process $requestData, then delegate to parent
+        $requestData = $this->sanitize($requestData);
+        return parent::getQueries($filterConfig, $requestData);
+    }
+
+    private function sanitize(array $data): array
+    {
+        // strip XSS, trim values, etc.
+        return $data;
+    }
+}
+```
+
+---
+
+## Strict mode
+
+By default, an unknown formula (e.g. a typo like `column:equ`) is silently ignored. Enable strict mode to throw an `InvalidArgumentException` instead — helpful during development.
+
+```php
+// config/filter-builder.php
+'strict_mode' => env('APP_DEBUG', false),
+```
+
+With strict mode on:
+
+```php
+->setFilters([
+    'name' => 'users.name:typo',   // throws InvalidArgumentException
+])
+```
+
+Error message:
+
+```
+Unknown filter formula "typo". Register it in config('filter-builder.formulas')
+or via FilterConfig::addFormula().
+```
+
+---
+
 ## Publishing & customising the config file
 
 ```bash
 php artisan vendor:publish --tag=filter-builder-config
 ```
 
-This creates `config/filter-builder.php`:
+This creates `config/filter-builder.php` with all available options:
 
 ```php
 return [
@@ -524,8 +617,22 @@ return [
     // Fallback sort direction when not specified in the request
     'default_sort_direction' => 'desc',
 
-    // Global custom formulas available in all FilterConfig instances
-    'custom_formulas' => [],
+    // Throw on unknown formula instead of silently skipping
+    'strict_mode' => env('APP_DEBUG', false),
+
+    // Global formulas available in all FilterConfig instances
+    // (merged after built-ins; per-config formulas have highest priority)
+    'formulas' => [
+        // 'year'  => fn ($q, $col, $val) => $q->whereYear($col, $val),
+        // 'month' => fn ($q, $col, $val) => $q->whereMonth($col, $val),
+    ],
+
+    // Swappable handler classes (resolved via Laravel container)
+    'handlers' => [
+        'where' => \AnhTT\FilterBuilder\FilterWhere::class,
+        'sort'  => \AnhTT\FilterBuilder\FilterSort::class,
+        'join'  => \AnhTT\FilterBuilder\FilterJoin::class,
+    ],
 ];
 ```
 
@@ -625,7 +732,7 @@ public function index(Request $request)
             'categories.name as category_name',
             'brands.name as brand_name',
         ])
-        ->setWiths(['images', 'tags']);
+        ->setWith(['images', 'tags']);
 
     return Product::filterBuilder(
         $request->all(),

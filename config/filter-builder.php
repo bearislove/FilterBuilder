@@ -1,36 +1,87 @@
 <?php
 
 return [
+
     /*
-     * Keys in the request payload that contain arrays of filter items
-     * (each element is itself a ['name' => ..., 'value' => ...] pair).
-     * Extend this list to support additional wrapper keys without touching core code.
-     */
+    |--------------------------------------------------------------------------
+    | Array input keys
+    |--------------------------------------------------------------------------
+    | Keys in the request payload whose values are arrays of
+    | { "name": "...", "value": "..." } filter items.
+    | Extend this list to support additional wrapper keys.
+    */
     'array_input_keys' => ['keywords', 'periods'],
 
     /*
-     * Default join type used when a join config entry does not specify a 'type'.
-     * Accepted values: 'join' | 'leftJoin' | 'rightJoin'
-     */
+    |--------------------------------------------------------------------------
+    | Default join type
+    |--------------------------------------------------------------------------
+    | Used when a join config entry does not specify a 'type'.
+    | Accepted: 'join' | 'leftJoin' | 'rightJoin'
+    */
     'default_join_type' => 'leftJoin',
 
     /*
-     * Fallback sort direction when the request provides a sort field but omits
-     * the direction (e.g. "name" instead of "name:asc").
-     * Accepted values: 'asc' | 'desc'
-     */
+    |--------------------------------------------------------------------------
+    | Default sort direction
+    |--------------------------------------------------------------------------
+    | Fallback when the request provides a sort field but omits direction
+    | (e.g. "name" instead of "name:asc").
+    | Accepted: 'asc' | 'desc'
+    */
     'default_sort_direction' => 'desc',
 
     /*
-     * Global custom filter formulas merged into every FilterWhere instance.
-     * Each entry is a closure: function ($query, $column, $value) { ... }
-     * These can be overridden per-FilterConfig via FilterConfig::addFormula().
-     *
-     * Example:
-     * 'custom_formulas' => [
-     *     'null' => fn ($query, $column) => $query->whereNull($column),
-     *     'not_null' => fn ($query, $column) => $query->whereNotNull($column),
-     * ],
-     */
-    'custom_formulas' => [],
+    |--------------------------------------------------------------------------
+    | Strict mode
+    |--------------------------------------------------------------------------
+    | When true, using an unknown formula (e.g. 'column:typo') throws an
+    | InvalidArgumentException instead of silently skipping the filter.
+    | Useful during development to catch typos early.
+    */
+    'strict_mode' => env('APP_DEBUG', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Global formulas
+    |--------------------------------------------------------------------------
+    | Register additional filter formulas available to every FilterConfig
+    | instance. Each value must be a callable:
+    |   fn ($query, $column, $value) => $query->...
+    |
+    | These are merged after built-in formulas, so they can override defaults.
+    | Per-FilterConfig formulas (addFormula / setCustomFormulas) have highest
+    | priority and override both built-ins and these global ones.
+    |
+    | Example:
+    |   'formulas' => [
+    |       'year'  => fn ($q, $col, $val) => $q->whereYear($col, $val),
+    |       'month' => fn ($q, $col, $val) => $q->whereMonth($col, $val),
+    |   ],
+    */
+    'formulas' => [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handler classes
+    |--------------------------------------------------------------------------
+    | The three handler classes that build WHERE, ORDER BY, and JOIN clauses.
+    | Swap any of them with your own implementation to customise behaviour
+    | globally without touching FilterConfig or FilterForm.
+    |
+    | The classes are resolved via the Laravel service container, so you can
+    | also bind alternatives in AppServiceProvider:
+    |   $this->app->bind(FilterWhere::class, MyFilterWhere::class);
+    |
+    | Example: replace only the WHERE handler
+    |   'handlers' => [
+    |       'where' => \App\FilterBuilder\MyFilterWhere::class,
+    |   ],
+    */
+    'handlers' => [
+        'where' => \AnhTT\FilterBuilder\FilterWhere::class,
+        'sort'  => \AnhTT\FilterBuilder\FilterSort::class,
+        'join'  => \AnhTT\FilterBuilder\FilterJoin::class,
+    ],
+
 ];

@@ -2,12 +2,16 @@
 
 namespace AnhTT\FilterBuilder;
 
+use AnhTT\FilterBuilder\Support\Cfg;
+
 class FilterJoin
 {
+    private const VALID_TYPES = ['join', 'leftJoin', 'rightJoin'];
+
     public function getQueries(FilterConfig $filterConfig): array
     {
-        $tables = $filterConfig->getTablesUsed();
-        $defaultType = $this->defaultJoinType();
+        $tables      = $filterConfig->getTablesUsed();
+        $defaultType = Cfg::get('default_join_type', 'leftJoin');
         $joinQueries = [];
 
         foreach ($tables as $tableConfig) {
@@ -21,21 +25,11 @@ class FilterJoin
                 $args = $tableConfig;
             }
 
-            $type = in_array($type, ['join', 'leftJoin', 'rightJoin'], true) ? $type : $defaultType;
+            $type = in_array($type, self::VALID_TYPES, true) ? $type : $defaultType;
 
-            $joinQueries[] = function ($query) use ($type, $args) {
-                return $query->{$type}(...$args);
-            };
+            $joinQueries[] = fn ($query) => $query->{$type}(...$args);
         }
 
         return $joinQueries;
-    }
-
-    private function defaultJoinType(): string
-    {
-        if (function_exists('config')) {
-            return config('filter-builder.default_join_type', 'leftJoin');
-        }
-        return 'leftJoin';
     }
 }
