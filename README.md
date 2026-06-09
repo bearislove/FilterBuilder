@@ -234,33 +234,77 @@ public function index(Request $request)
 
 Formulas are specified as `column:formula` in the filters array.
 
-| Formula    | SQL equivalent                                  | Example value         |
-|------------|-------------------------------------------------|-----------------------|
-| `eq`       | `WHERE column = ?`                              | `"john"`              |
-| `ne`       | `WHERE column != ?`                             | `"banned"`            |
-| `gt`       | `WHERE column > ?`                              | `18`                  |
-| `gte`      | `WHERE column >= ?`                             | `18`                  |
-| `lt`       | `WHERE column < ?`                              | `100`                 |
-| `lte`      | `WHERE column <= ?`                             | `100`                 |
-| `in`       | `WHERE column IN (?)`                           | `[1, 2, 3]`           |
-| `ni`       | `WHERE column NOT IN (?)`                       | `[4, 5]`              |
-| `null`     | `WHERE column IS NULL`                          | *(any truthy value)*  |
-| `not_null` | `WHERE column IS NOT NULL`                      | *(any truthy value)*  |
-| `cn`       | `WHERE column LIKE '%value%'`                   | `"john"`              |
-| `sw`       | `WHERE column LIKE 'value%'`                    | `"jo"`                |
-| `ew`       | `WHERE column LIKE '%value'`                    | `"hn"`                |
-| `bw`       | `WHERE column >= from AND column <= to`         | `{"from":1,"to":10}`  |
-| `dbw`      | `WHERE column >= from AND column <= to` (dates) | `{"from":"2024-01-01","to":"2024-12-31"}` |
+### Comparison
+
+| Formula | SQL equivalent          | Example value |
+|---------|-------------------------|---------------|
+| `eq`    | `WHERE col = ?`         | `"active"`    |
+| `ne`    | `WHERE col != ?`        | `"banned"`    |
+| `gt`    | `WHERE col > ?`         | `18`          |
+| `gte`   | `WHERE col >= ?`        | `18`          |
+| `lt`    | `WHERE col < ?`         | `100`         |
+| `lte`   | `WHERE col <= ?`        | `100`         |
+| `col`   | `WHERE col = otherCol`  | `"orders.discount"` |
+
+### Array membership
+
+| Formula | SQL equivalent              | Example value  |
+|---------|-----------------------------|----------------|
+| `in`    | `WHERE col IN (?)`          | `[1, 2, 3]`    |
+| `ni`    | `WHERE col NOT IN (?)`      | `[4, 5]`       |
+
+### Null checks
+
+| Formula    | SQL equivalent          | Example value       |
+|------------|-------------------------|---------------------|
+| `null`     | `WHERE col IS NULL`     | *(any truthy value)* |
+| `not_null` | `WHERE col IS NOT NULL` | *(any truthy value)* |
+
+### String / LIKE
+
+| Formula | SQL equivalent                   | Example value |
+|---------|----------------------------------|---------------|
+| `cn`    | `WHERE col LIKE '%value%'`       | `"john"`      |
+| `ncn`   | `WHERE col NOT LIKE '%value%'`   | `"spam"`      |
+| `sw`    | `WHERE col LIKE 'value%'`        | `"jo"`        |
+| `ew`    | `WHERE col LIKE '%value'`        | `"hn"`        |
+
+### Range  `{from, to}`
+
+| Formula | SQL equivalent                                        | Example value |
+|---------|-------------------------------------------------------|---------------|
+| `bw`    | `WHERE col >= from AND col <= to`                     | `{"from":1,"to":100}` |
+| `dbw`   | `WHERE col >= from AND col <= to` *(parsed as dates)* | `{"from":"2024-01-01","to":"2024-12-31"}` |
+
+### Date parts  *(on DATETIME / TIMESTAMP columns)*
+
+| Formula | SQL equivalent            | Example value  |
+|---------|---------------------------|----------------|
+| `date`  | `WHERE DATE(col) = ?`     | `"2024-06-15"` |
+| `year`  | `WHERE YEAR(col) = ?`     | `2024`         |
+| `month` | `WHERE MONTH(col) = ?`    | `6`            |
+| `day`   | `WHERE DAY(col) = ?`      | `15`           |
+| `time`  | `WHERE TIME(col) = ?`     | `"08:00:00"`   |
+
+### JSON columns  *(MySQL 5.7+ / PostgreSQL jsonb)*
+
+| Formula | SQL equivalent                    | Example value       |
+|---------|-----------------------------------|---------------------|
+| `json`  | `WHERE JSON_CONTAINS(col, value)` | `"tag"` or `["a","b"]` |
+
+---
 
 ### Examples
 
 ```php
 ->setFilters([
-    // Exact match
+    // Exact match / not equal
     'status'       => 'users.status:eq',
+    'blocked'      => 'users.status:ne',
 
-    // Contains (LIKE %value%)
+    // Contains / NOT contains
     'name'         => 'users.name:cn',
+    'name_exclude' => 'users.name:ncn',
 
     // Numeric range: GET /users?age[from]=18&age[to]=30
     'age'          => 'users.age:bw',
@@ -268,11 +312,26 @@ Formulas are specified as `column:formula` in the filters array.
     // Date range: GET /users?created[from]=2024-01-01&created[to]=2024-12-31
     'created'      => 'users.created_at:dbw',
 
+    // Exact date (ignores time): GET /users?birthday=1990-05-20
+    'birthday'     => 'users.birth_date:date',
+
+    // Date parts: GET /users?year=2024&month=6
+    'year'         => 'users.created_at:year',
+    'month'        => 'users.created_at:month',
+
     // Filter by list: GET /users?role_ids[]=1&role_ids[]=2
     'role_ids'     => 'users.role_id:in',
 
     // Null check: GET /users?deleted=1
     'deleted'      => 'users.deleted_at:not_null',
+    'active'       => 'users.deleted_at:null',
+
+    // JSON column: GET /products?tag=electronics
+    'tag'          => 'products.tags:json',
+
+    // Column-to-column: rows where discount < price
+    // GET /orders?check_discount=orders.price
+    'check_discount' => 'orders.discount:col',
 ])
 ```
 

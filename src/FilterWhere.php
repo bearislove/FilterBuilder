@@ -60,20 +60,41 @@ class FilterWhere
         }
 
         return static::$builtinCache = [
-            'eq'       => fn ($q, $col, $val) => $q->where($col, $val),
-            'ne'       => fn ($q, $col, $val) => $q->where($col, '!=', $val),
-            'gt'       => fn ($q, $col, $val) => $q->where($col, '>', $val),
-            'gte'      => fn ($q, $col, $val) => $q->where($col, '>=', $val),
-            'lt'       => fn ($q, $col, $val) => $q->where($col, '<', $val),
-            'lte'      => fn ($q, $col, $val) => $q->where($col, '<=', $val),
-            'in'       => fn ($q, $col, $val) => $q->whereIn($col, (array) $val),
-            'ni'       => fn ($q, $col, $val) => $q->whereNotIn($col, (array) $val),
-            'null'     => fn ($q, $col)        => $q->whereNull($col),
-            'not_null' => fn ($q, $col)        => $q->whereNotNull($col),
-            'cn'       => fn ($q, $col, $val) => $q->where($col, 'like', "%{$val}%"),
-            'sw'       => fn ($q, $col, $val) => $q->where($col, 'like', "{$val}%"),
-            'ew'       => fn ($q, $col, $val) => $q->where($col, 'like', "%{$val}"),
-            'bw'       => static function ($q, $col, $val) {
+
+            // ------------------------------------------------------------------
+            // Comparison
+            // ------------------------------------------------------------------
+            'eq'  => fn ($q, $col, $val) => $q->where($col, $val),
+            'ne'  => fn ($q, $col, $val) => $q->where($col, '!=', $val),
+            'gt'  => fn ($q, $col, $val) => $q->where($col, '>', $val),
+            'gte' => fn ($q, $col, $val) => $q->where($col, '>=', $val),
+            'lt'  => fn ($q, $col, $val) => $q->where($col, '<', $val),
+            'lte' => fn ($q, $col, $val) => $q->where($col, '<=', $val),
+
+            // ------------------------------------------------------------------
+            // Array membership
+            // ------------------------------------------------------------------
+            'in' => fn ($q, $col, $val) => $q->whereIn($col, (array) $val),
+            'ni' => fn ($q, $col, $val) => $q->whereNotIn($col, (array) $val),
+
+            // ------------------------------------------------------------------
+            // Null checks
+            // ------------------------------------------------------------------
+            'null'     => fn ($q, $col) => $q->whereNull($col),
+            'not_null' => fn ($q, $col) => $q->whereNotNull($col),
+
+            // ------------------------------------------------------------------
+            // String / LIKE
+            // ------------------------------------------------------------------
+            'cn'  => fn ($q, $col, $val) => $q->where($col, 'like', "%{$val}%"),
+            'ncn' => fn ($q, $col, $val) => $q->where($col, 'not like', "%{$val}%"),
+            'sw'  => fn ($q, $col, $val) => $q->where($col, 'like', "{$val}%"),
+            'ew'  => fn ($q, $col, $val) => $q->where($col, 'like', "%{$val}"),
+
+            // ------------------------------------------------------------------
+            // Numeric / generic range  {from, to}
+            // ------------------------------------------------------------------
+            'bw' => static function ($q, $col, $val) {
                 if (isset($val['from']) && $val['from'] !== null && $val['from'] !== '') {
                     $q->where($col, '>=', $val['from']);
                 }
@@ -82,7 +103,11 @@ class FilterWhere
                 }
                 return $q;
             },
-            'dbw'      => static function ($q, $col, $val) {
+
+            // ------------------------------------------------------------------
+            // Date-time range  {from, to}  — values parsed to Y-m-d H:i:s
+            // ------------------------------------------------------------------
+            'dbw' => static function ($q, $col, $val) {
                 if (isset($val['from']) && $val['from'] !== null && $val['from'] !== '') {
                     $q->where($col, '>=', date('Y-m-d H:i:s', strtotime($val['from'])));
                 }
@@ -91,6 +116,40 @@ class FilterWhere
                 }
                 return $q;
             },
+
+            // ------------------------------------------------------------------
+            // Date parts  (work on DATETIME / TIMESTAMP columns)
+            // ------------------------------------------------------------------
+
+            // WHERE DATE(col) = '2024-06-01'  — strips the time portion
+            'date'  => fn ($q, $col, $val) => $q->whereDate($col, $val),
+
+            // WHERE YEAR(col) = 2024
+            'year'  => fn ($q, $col, $val) => $q->whereYear($col, $val),
+
+            // WHERE MONTH(col) = 6
+            'month' => fn ($q, $col, $val) => $q->whereMonth($col, $val),
+
+            // WHERE DAY(col) = 15
+            'day'   => fn ($q, $col, $val) => $q->whereDay($col, $val),
+
+            // WHERE TIME(col) = '08:00:00'
+            'time'  => fn ($q, $col, $val) => $q->whereTime($col, '=', $val),
+
+            // ------------------------------------------------------------------
+            // JSON columns  (MySQL 5.7+ / PostgreSQL with jsonb)
+            // ------------------------------------------------------------------
+
+            // WHERE JSON_CONTAINS(col, '"value"')
+            'json' => fn ($q, $col, $val) => $q->whereJsonContains($col, $val),
+
+            // ------------------------------------------------------------------
+            // Column-to-column comparison  (value = another column name)
+            // 'price_field' => 'orders.total:col'  +  request value = 'orders.discount'
+            // → WHERE orders.total = orders.discount
+            // ------------------------------------------------------------------
+            'col' => fn ($q, $col, $val) => $q->whereColumn($col, $val),
+
         ];
     }
 
