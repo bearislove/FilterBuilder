@@ -27,6 +27,48 @@ class FilterConfig
     private array $tablesUsed = [];
 
     // -------------------------------------------------------------------------
+    // Static factory
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create a new FilterConfig instance.
+     *
+     * All parameters are optional — pass only what you need.
+     * Named arguments (PHP 8+) make this very readable:
+     *
+     *   FilterConfig::make(
+     *       filters:     ['name' => 'users.name:cn'],
+     *       sorts:       ['name' => 'users.name'],
+     *       defaultSort: 'id:desc',
+     *   )
+     */
+    public static function make(
+        array  $filters        = [],
+        array  $sorts          = [],
+        array  $joins          = [],
+        array  $joinPriorities = [],
+        string $defaultSort    = '',
+        array  $selects        = [],
+        array  $with           = [],
+        array  $customFormulas = [],
+        array  $arrayInputKeys = [],
+    ): static {
+        $instance = new static();
+
+        if ($filters)        $instance->filters        = $filters;
+        if ($sorts)          $instance->sorts          = $sorts;
+        if ($joins)          $instance->joins          = $joins;
+        if ($joinPriorities) $instance->joinPriorities = $joinPriorities;
+        if ($defaultSort)    $instance->defaultSort    = $defaultSort;
+        if ($selects)        $instance->selects        = $selects;
+        if ($with)           $instance->with           = $with;
+        if ($customFormulas) $instance->customFormulas = $customFormulas;
+        if ($arrayInputKeys) $instance->arrayInputKeys = $arrayInputKeys;
+
+        return $instance;
+    }
+
+    // -------------------------------------------------------------------------
     // Filters
     // -------------------------------------------------------------------------
 

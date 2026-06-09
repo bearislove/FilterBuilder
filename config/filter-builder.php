@@ -4,6 +4,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Request data key
+    |--------------------------------------------------------------------------
+    | When null  → the scope reads $request->all() as filter input.
+    | When a string (e.g. 'filters') → reads $request->input('filters', [])
+    | so your API can namespace all filter params under a single key:
+    |
+    |   GET /users?filters[name]=john&filters[status]=active
+    |
+    | Can be overridden per-call by passing an array or Request explicitly.
+    */
+    'request_data_key' => null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sort key
+    |--------------------------------------------------------------------------
+    | The request parameter that carries the sort string.
+    | Default: 'sort'  →  GET /users?sort=name:asc,created_at:desc
+    |
+    | Change this if your API uses a different key, e.g. 'order_by'.
+    */
+    'sort_key' => 'sort',
+
+    /*
+    |--------------------------------------------------------------------------
     | Array input keys
     |--------------------------------------------------------------------------
     | Keys in the request payload whose values are arrays of

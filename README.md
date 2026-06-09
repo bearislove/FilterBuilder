@@ -16,6 +16,7 @@ Easily build Eloquent queries from API request parameters — filters, sorts, jo
 - [Select columns](#select-columns)
 - [Eager loading (with)](#eager-loading-with)
 - [Custom formulas](#custom-formulas)
+- [Request keys](#request-keys)
 - [Array input keys](#array-input-keys)
 - [Swapping handler classes](#swapping-handler-classes)
 - [Strict mode](#strict-mode)
@@ -54,24 +55,22 @@ class User extends Authenticatable
 // app/Http/Controllers/UserController.php
 use AnhTT\FilterBuilder\FilterConfig;
 
-public function index(Request $request)
+public function index()
 {
-    $filterConfig = (new FilterConfig())
-        ->setFilters([
+    $filterConfig = FilterConfig::make(
+        filters: [
             'name'  => 'users.name:cn',
             'email' => 'users.email:eq',
-        ])
-        ->setSorts([
+        ],
+        sorts: [
             'name'  => 'users.name',
             'email' => 'users.email',
-        ])
-        ->setDefaultSort('id:desc');
+        ],
+        defaultSort: 'id:desc',
+    );
 
-    return User::filterBuilder(
-        $request->all(),
-        $filterConfig,
-        $request->input('sort', '')
-    )->paginate();
+    // Request and sort key are resolved automatically from config
+    return User::filterBuilder($filterConfig)->paginate();
 }
 ```
 
@@ -86,8 +85,8 @@ Use `FilterConfig` directly when the filter logic is simple or one-off.
 ```php
 use AnhTT\FilterBuilder\FilterConfig;
 
-$filterConfig = (new FilterConfig())
-    ->setFilters([
+$filterConfig = FilterConfig::make(
+    filters: [
         // column:formula
         'id'           => 'users.id:eq',
         'name'         => 'users.name:cn',
@@ -108,13 +107,13 @@ $filterConfig = (new FilterConfig())
             $query->where('users.status', 'active')
                   ->where('users.plan', 'premium');
         },
-    ])
-    ->setSorts([
+    ],
+    sorts: [
         'id'         => 'users.id',
         'name'       => 'users.name',
         'created_at' => 'users.created_at',
-    ])
-    ->setJoins([
+    ],
+    joins: [
         // Simple format (uses default_join_type from config)
         'orders' => ['orders', 'orders.user_id', '=', 'users.id'],
 
@@ -132,12 +131,21 @@ $filterConfig = (new FilterConfig())
                      ->where('roles.active', 1);
             }],
         ],
-    ])
-    ->setJoinPriority([
+    ],
+    joinPriorities: [
         // 'order_items' requires 'orders' to be joined first
         'order_items' => ['orders'],
-    ])
-    ->setDefaultSort('created_at:desc');
+    ],
+    defaultSort: 'created_at:desc',
+);
+```
+
+Setters are still available for chaining after creation:
+
+```php
+$filterConfig = FilterConfig::make(filters: [...])
+    ->setSelects(['users.id', 'users.name'])
+    ->setWith(['profile']);
 ```
 
 ---
@@ -544,6 +552,57 @@ built-ins  <  config('filter-builder.formulas')  <  FilterConfig::addFormula()
 
 ---
 
+## Request keys
+
+The `filterBuilder` scope auto-resolves the current request from the container so you never have to pass it manually. Two config keys control which parts of the request it reads.
+
+### `sort_key` — which request parameter carries the sort string
+
+```php
+// config/filter-builder.php
+'sort_key' => 'sort',   // default → GET /users?sort=name:asc
+```
+
+Change it if your API uses a different name:
+
+```php
+'sort_key' => 'order_by',   // → GET /users?order_by=name:asc
+```
+
+### `request_data_key` — which request parameter carries filter data
+
+```php
+// config/filter-builder.php
+'request_data_key' => null,   // default → reads $request->all()
+```
+
+Set a string to namespace all filters under a single key:
+
+```php
+'request_data_key' => 'filters',
+// → GET /users?filters[name]=john&filters[status]=active&sort=name:asc
+```
+
+### Calling the scope
+
+```php
+// Simplest — reads everything from request using config keys
+User::filterBuilder($filterConfig)->paginate();
+
+// Pass a specific Request (useful in jobs, commands, tests)
+User::filterBuilder($filterConfig, $request)->paginate();
+
+// Pass raw array + explicit sort (full manual control)
+User::filterBuilder($filterConfig, $request->all(), 'name:asc')->paginate();
+
+// Raw array without sort
+User::filterBuilder($filterConfig, ['name' => 'john'])->paginate();
+```
+
+> The `sort` argument passed directly always wins over what is in the request.
+
+---
+
 ## Array input keys
 
 Some APIs send groups of filters under wrapper keys, e.g.:
@@ -667,6 +726,12 @@ This creates `config/filter-builder.php` with all available options:
 
 ```php
 return [
+    // null = $request->all(); 'filters' = $request->input('filters', [])
+    'request_data_key' => null,
+
+    // Request parameter name for the sort string
+    'sort_key' => 'sort',
+
     // Keys in the request treated as arrays of {name, value} filter items
     'array_input_keys' => ['keywords', 'periods'],
 
@@ -681,10 +746,7 @@ return [
 
     // Global formulas available in all FilterConfig instances
     // (merged after built-ins; per-config formulas have highest priority)
-    'formulas' => [
-        // 'year'  => fn ($q, $col, $val) => $q->whereYear($col, $val),
-        // 'month' => fn ($q, $col, $val) => $q->whereMonth($col, $val),
-    ],
+    'formulas' => [],
 
     // Swappable handler classes (resolved via Laravel container)
     'handlers' => [
