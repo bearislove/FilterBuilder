@@ -9,6 +9,7 @@ Easily build Eloquent queries from API request parameters — filters, sorts, jo
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [FilterConfig — ad-hoc configuration](#filterconfig--ad-hoc-configuration)
+- [FilterField — avoid repeating column names](#filterfield--avoid-repeating-column-names)
 - [FilterForm — class-based configuration](#filterform--class-based-configuration)
 - [Filter formulas reference](#filter-formulas-reference)
 - [Sorts](#sorts)
@@ -58,13 +59,9 @@ use AnhTT\FilterBuilder\FilterConfig;
 public function index()
 {
     $filterConfig = FilterConfig::make(
-        filters: [
-            'name'  => 'users.name:cn',
-            'email' => 'users.email:eq',
-        ],
-        sorts: [
-            'name'  => 'users.name',
-            'email' => 'users.email',
+        fields: [
+            'name'  => FilterField::make('users.name')->filter('cn')->sortable(),
+            'email' => FilterField::make('users.email')->filter('eq')->sortable(),
         ],
         defaultSort: 'id:desc',
     );
@@ -146,6 +143,58 @@ Setters are still available for chaining after creation:
 $filterConfig = FilterConfig::make(filters: [...])
     ->setSelects(['users.id', 'users.name'])
     ->setWith(['profile']);
+```
+
+---
+
+## FilterField — avoid repeating column names
+
+When the same key appears in both `filters` and `sorts`, the column is written twice. Use `FilterField` to declare the column once and attach both a filter formula and sort in a single expression.
+
+```php
+use AnhTT\FilterBuilder\FilterField;
+
+FilterConfig::make(
+    fields: [
+        // filter + sort on the same column
+        'name'       => FilterField::make('users.name')->filter('cn')->sortable(),
+        'email'      => FilterField::make('users.email')->filter('eq')->sortable(),
+        'created_at' => FilterField::make('users.created_at')->filter('date')->sortable(),
+
+        // filter only — not sortable
+        'status'     => FilterField::make('users.status')->filter('in'),
+
+        // sort only — no filter
+        'rank'       => FilterField::make('users.score')->sortable(),
+
+        // sort on a different column than the filter
+        'role'       => FilterField::make('roles.name')->filter('eq')->sortable('roles.sort_order'),
+
+        // OR-group: WHERE (name LIKE ? OR email LIKE ?)
+        'search'     => FilterField::any('users.name:cn', 'users.email:cn'),
+    ],
+    joins: [
+        'roles' => ['type' => 'leftJoin', 'args' => ['roles', 'roles.id', '=', 'users.role_id']],
+    ],
+    defaultSort: 'created_at:desc',
+)
+```
+
+`fields` and `filters`/`sorts` can be mixed freely — `fields` entries are expanded first, then explicit `filters`/`sorts` entries are merged on top (explicit wins on duplicate keys).
+
+```php
+FilterConfig::make(
+    // Shared fields
+    fields: [
+        'name' => FilterField::make('users.name')->filter('cn')->sortable(),
+    ],
+    // Add a filter that doesn't need a sort
+    filters: [
+        'active_premium' => function ($query, $value) {
+            $query->where('status', 'active')->where('plan', 'premium');
+        },
+    ],
+)
 ```
 
 ---

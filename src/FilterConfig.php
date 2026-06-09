@@ -52,8 +52,23 @@ class FilterConfig
         array  $with           = [],
         array  $customFormulas = [],
         array  $arrayInputKeys = [],
+        array  $fields         = [],
     ): static {
         $instance = new static();
+
+        // Expand FilterField entries into filters + sorts so the same column
+        // definition is not repeated in both arrays.
+        foreach ($fields as $key => $field) {
+            if (!$field instanceof FilterField) {
+                continue;
+            }
+            if ($field->hasFilter()) {
+                $filters[$key] = $field->toFilterValue();
+            }
+            if ($field->isSortableField()) {
+                $sorts[$key] = $field->toSortColumn();
+            }
+        }
 
         if ($filters)        $instance->filters        = $filters;
         if ($sorts)          $instance->sorts          = $sorts;
