@@ -2,10 +2,13 @@
   "name": "anhtt/laravel-filter-builder",
   "description": "Easily build Eloquent queries from API requests",
   "keywords": [
-    "anhtt",
-    "laravel-filter-builder"
+    "laravel",
+    "eloquent",
+    "filter",
+    "query-builder",
+    "anhtt"
   ],
-  "homepage": "https://www.facebook.com/profile.php?id=100067715723400",
+  "homepage": "https://github.com/anhtt/laravel-filter-builder",
   "type": "library",
   "license": "MIT",
   "authors": [
@@ -16,11 +19,28 @@
     }
   ],
   "require": {
-    "php": "^7.4 || ^8.0"
+    "php": "^7.4 || ^8.0",
+    "illuminate/support": "^8.0 || ^9.0 || ^10.0 || ^11.0"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^6.0 || ^7.0 || ^8.0 || ^9.0",
+    "phpunit/phpunit": "^9.0 || ^10.0 || ^11.0"
   },
   "autoload": {
     "psr-4": {
       "AnhTT\\FilterBuilder\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "AnhTT\\FilterBuilder\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "AnhTT\\FilterBuilder\\FilterBuilderServiceProvider"
+      ]
     }
   },
   "minimum-stability": "dev",

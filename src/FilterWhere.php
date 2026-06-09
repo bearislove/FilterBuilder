@@ -4,96 +4,137 @@ namespace AnhTT\FilterBuilder;
 
 class FilterWhere
 {
-    public function getQueries(FilterConfig $filerConfig, array $requestData): array
+    public function getQueries(FilterConfig $filterConfig, array $requestData): array
     {
-        $configs = $filerConfig->getFilters();
-        $formulas = $this->formulas();
+        $configs = $filterConfig->getFilters();
+        $formulas = array_merge($this->builtinFormulas(), $this->globalFormulas(), $filterConfig->getCustomFormulas());
         $filterQueries = [];
+
         foreach ($requestData as $requestItem) {
-            $name = $requestItem['name'] ?? false;
-            $value = $requestItem['value'] ?? false;
-            if ($name && $value && isset($configs[$name])) {
-                $filterQuery = $this->getFilterQuery($configs[$name], $value, $formulas, $filerConfig);
-                $filterQuery && $filterQueries[] = $filterQuery;
+            $name  = $requestItem['name']  ?? null;
+            $value = $requestItem['value'] ?? null;
+
+            if ($name === null || $value === null || $value === '' || !isset($configs[$name])) {
+                continue;
+            }
+
+            $filterQuery = $this->getFilterQuery($configs[$name], $value, $formulas, $filterConfig);
+            if ($filterQuery !== null) {
+                $filterQueries[] = $filterQuery;
             }
         }
+
         return $filterQueries;
     }
 
-    private function formulas(): array
+    private function builtinFormulas(): array
     {
         return [
             'eq' => function ($query, $column, $value) {
                 return $query->where($column, $value);
             },
             'ne' => function ($query, $column, $value) {
-                return $query->whereNot($column, $value);
+                return $query->where($column, '!=', $value);
+            },
+            'gt' => function ($query, $column, $value) {
+                return $query->where($column, '>', $value);
+            },
+            'gte' => function ($query, $column, $value) {
+                return $query->where($column, '>=', $value);
+            },
+            'lt' => function ($query, $column, $value) {
+                return $query->where($column, '<', $value);
+            },
+            'lte' => function ($query, $column, $value) {
+                return $query->where($column, '<=', $value);
             },
             'in' => function ($query, $column, $value) {
-                return $query->whereIn($column, $value);
+                return $query->whereIn($column, (array) $value);
             },
             'ni' => function ($query, $column, $value) {
-                return $query->whereNotIn($column, $value);
+                return $query->whereNotIn($column, (array) $value);
+            },
+            'null' => function ($query, $column) {
+                return $query->whereNull($column);
+            },
+            'not_null' => function ($query, $column) {
+                return $query->whereNotNull($column);
             },
             'cn' => function ($query, $column, $value) {
-                return $query->where($column, 'like', "%$value%");
+                return $query->where($column, 'like', "%{$value}%");
             },
             'sw' => function ($query, $column, $value) {
-                return $query->where($column, 'like', "$value%");
+                return $query->where($column, 'like', "{$value}%");
             },
             'ew' => function ($query, $column, $value) {
-                return $query->where($column, 'like', "%$value");
+                return $query->where($column, 'like', "%{$value}");
             },
             'bw' => function ($query, $column, $value) {
-                if (isset($value['from'])) {
+                if (isset($value['from']) && $value['from'] !== null && $value['from'] !== '') {
                     $query->where($column, '>=', $value['from']);
                 }
-                if (isset($value['to'])) {
+                if (isset($value['to']) && $value['to'] !== null && $value['to'] !== '') {
                     $query->where($column, '<=', $value['to']);
                 }
                 return $query;
             },
             'dbw' => function ($query, $column, $value) {
-                if (isset($value['from'])) {
-                    $from = date_parse($value['from']);
-                    $from &&
-                    $query->where($column, '>=', "{$from['year']}-{$from['month']}-{$from['day']} {$from['hour']}:{$from['minute']}:{$from['second']}");
-
+                if (isset($value['from']) && $value['from'] !== null && $value['from'] !== '') {
+                    $query->where($column, '>=', date('Y-m-d H:i:s', strtotime($value['from'])));
                 }
-                if (isset($value['to'])) {
-                    $to = date_parse($value['to']);
-                    $to &&
-                    $query->where($column, '<=', "{$to['year']}-{$to['month']}-{$to['day']} {$to['hour']}:{$to['minute']}:{$to['second']}");
+                if (isset($value['to']) && $value['to'] !== null && $value['to'] !== '') {
+                    $query->where($column, '<=', date('Y-m-d H:i:s', strtotime($value['to'])));
                 }
                 return $query;
-            }
+            },
         ];
     }
 
-    private function getFilterQuery($filter, $value, $formulas, FilterConfig $filerConfig): ?\Closure
+    private function globalFormulas(): array
+    {
+        if (!function_exists('config')) {
+            return [];
+        }
+        return config('filter-builder.custom_formulas', []);
+    }
+
+    private function getFilterQuery($filter, $value, array $formulas, FilterConfig $filterConfig): ?\Closure
     {
         if (is_string($filter)) {
             [$column, $syntax] = explode(':', $filter, 2);
-            $filerConfig->addJoin($column);
+
+            if (!isset($formulas[$syntax])) {
+                return null;
+            }
+
+            $filterConfig->addJoin($column);
+
             return function ($query) use ($syntax, $column, $value, $formulas) {
                 return $formulas[$syntax]($query, $column, $value);
             };
-        } elseif (is_callable($filter)) {
-            return function ($query) use ($filter, $value, $filerConfig) {
-                return $query->where(function ($query) use ($filter, $value, $filerConfig) {
-                    return $filter($query, $value, $filerConfig);
+        }
+
+        if (is_callable($filter)) {
+            return function ($query) use ($filter, $value, $filterConfig) {
+                return $query->where(function ($query) use ($filter, $value, $filterConfig) {
+                    return $filter($query, $value, $filterConfig);
                 });
             };
+        }
 
-        } elseif (is_array($filter)) {
-            return function ($query) use ($filter, $value, $formulas, $filerConfig) {
-                return $query->where(function ($query) use ($filter, $value, $formulas, $filerConfig) {
+        if (is_array($filter)) {
+            return function ($query) use ($filter, $value, $formulas, $filterConfig) {
+                return $query->where(function ($query) use ($filter, $value, $formulas, $filterConfig) {
                     foreach ($filter as $item) {
-                        $query->orWhere($this->getFilterQuery($item, $value, $formulas, $filerConfig));
+                        $subQuery = $this->getFilterQuery($item, $value, $formulas, $filterConfig);
+                        if ($subQuery !== null) {
+                            $query->orWhere($subQuery);
+                        }
                     }
                 });
             };
         }
+
         return null;
     }
 }
